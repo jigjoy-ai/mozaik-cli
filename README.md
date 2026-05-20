@@ -36,11 +36,13 @@ If you enable **Template repository** in the repo settings on GitHub, **Use this
 
 ## What this template includes
 
+Built against **`@mozaik-ai/core` ^3.10.1** (see [`package.json`](package.json)).
+
 | Concept                                                               | Where it lives                                                                                                   |
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | **`AgenticEnvironment`** — shared bus for participants                | [`source/session.ts`](source/session.ts): `environment.start()` after `join()`                                   |
-| **`BaseAgentParticipant`** — inference + tool execution               | [`source/terminal/agent.ts`](source/terminal/agent.ts): `TerminalAgent`                                          |
-| **`BaseObserverParticipant`** — react to _other_ participants’ events | [`source/ui-updater.ts`](source/ui-updater.ts): `UIUpdater` (`onExternalModelMessage`, `onExternalFunctionCall`) |
+| **`BaseAgent`** — inference + tool execution                          | [`source/terminal/agent.ts`](source/terminal/agent.ts): `TerminalAgent`                                          |
+| **`BaseObserver`** — model + tool events for UI (local / external)   | [`source/ui-updater.ts`](source/ui-updater.ts): `UIUpdater` (`onExternalModelMessage`, `onFunctionCall`, …)     |
 | **`ModelContext`** + **`GenerativeModel`** (`Gpt54`)                  | [`source/session.ts`](source/session.ts)                                                                         |
 | **`OpenAIInferenceRunner`** + **`DefaultFunctionCallRunner`**         | [`source/session.ts`](source/session.ts)                                                                         |
 | Declarative **`Tool`** definitions                                    | [`source/terminal/tools.ts`](source/terminal/tools.ts)                                                           |
@@ -77,15 +79,16 @@ flowchart LR
 
 **Flow in plain language**
 
-1. **`createAgentSession`** wires `DefaultFunctionCallRunner` (tools), `OpenAIInferenceRunner`, `ModelContext`, `Gpt54`, `TerminalAgent`, and `UIUpdater`, then starts the environment.
-2. **`TerminalAgent`** extends **`BaseAgentParticipant`**. On user input it injects a short developer instruction plus a **`UserMessageItem`**, then **`runInference`**. When the model emits a **`FunctionCallItem`**, it records it in context and **`executeFunctionCall`**; when outputs return and pending calls drain, it **`runInference`** again (typical agent loop).
-3. **`UIUpdater`** extends **`BaseObserverParticipant`**. It overrides **`onExternalModelMessage`** to surface assistant text to Ink, and **`onFunctionCall` / `onExternalFunctionCall`** to show which tool was invoked.
+1. **`createAgentSession`** wires `DefaultFunctionCallRunner` (tools), `OpenAIInferenceRunner`, `ModelContext`, `Gpt54`, `TerminalAgent`, `UIUpdater`, and **`BaseHuman`** (`user`), then starts the environment. User messages go through **`user.sendMessage(environment, message)`**.
+2. **`TerminalAgent`** extends **`BaseAgent`**. On user input it injects a short developer instruction plus a **`UserMessageItem`**, then **`runInference`**. When the model emits a **`FunctionCallItem`**, it records it in context and **`executeFunctionCall`**; when outputs return and pending calls drain, it **`runInference`** again (typical agent loop).
+3. **`UIUpdater`** extends **`BaseObserver`**. It overrides **`onExternalModelMessage`** to surface assistant text to Ink, and **`onFunctionCall` / `onExternalFunctionCall`** to show which tool was invoked.
 
 ---
 
 ## Prerequisites
 
 - **Node.js** ≥ 16 (see [`package.json`](package.json) `engines`)
+- **`@mozaik-ai/core` ^3.10.1** — upgrade or pin in [`package.json`](package.json) if you track a different minor
 - **OpenAI API key** — the stack uses **`OpenAIInferenceRunner`** and **`Gpt54`** from `@mozaik-ai/core`
 
 ---
@@ -139,9 +142,9 @@ When the model calls **`run_command`**, output is also printed to **`stdout`** f
 | ------------------------------------------------------------------------ | ---------------------------------------------------- |
 | [`source/cli.tsx`](source/cli.tsx)                                       | Entry: `dotenv`, `meow` help, `render(<App />)`      |
 | [`source/app.tsx`](source/app.tsx)                                       | Ink UI, local chat state, `createAgentSession` hooks |
-| [`source/session.ts`](source/session.ts)                                 | Wiring: environment, agent, observer, model          |
-| [`source/ui-updater.ts`](source/ui-updater.ts)                           | Observer participant → UI callbacks                  |
-| [`source/terminal/agent.ts`](source/terminal/agent.ts)                   | Agent participant: context + inference loop          |
+| [`source/session.ts`](source/session.ts)                                 | Wiring: environment, human user, agent, observer, model |
+| [`source/ui-updater.ts`](source/ui-updater.ts)                           | `BaseObserver` → UI callbacks                            |
+| [`source/terminal/agent.ts`](source/terminal/agent.ts)                   | `BaseAgent`: context + inference loop                    |
 | [`source/terminal/tools.ts`](source/terminal/tools.ts)                   | `Tool[]` for `run_command`                           |
 | [`source/terminal/terminal.ts`](source/terminal/terminal.ts)             | `spawn`-based command runner                         |
 | [`source/terminal/command-result.ts`](source/terminal/command-result.ts) | Structured command result type                       |
@@ -160,10 +163,10 @@ When the model calls **`run_command`**, output is also printed to **`stdout`** f
 
 ## Learning more
 
-- **Package:** [`@mozaik-ai/core` on npm](https://www.npmjs.com/package/@mozaik-ai/core) — install with `npm install @mozaik-ai/core`.
-- The upstream README documents **`Participant`** handlers (`onMessage`, `onFunctionCall`, `onExternalModelMessage`, …), **`BaseHumanParticipant`**, and reactive agent patterns — this starter focuses on **one agent + one observer** as a minimal base.
+- **Package:** [`@mozaik-ai/core` on npm](https://www.npmjs.com/package/@mozaik-ai/core) — this repo pins **`^3.10.1`**; install or upgrade with `npm install @mozaik-ai/core@^3.10.1`.
+- The upstream README documents **`Participant`** handlers (`onMessage`, `onFunctionCall`, `onExternalModelMessage`, …), **`BaseHuman`**, **`BaseAgent`**, **`BaseObserver`**, and reactive agent patterns — this starter focuses on **one human + one agent + one observer** as a minimal base.
 
-To extend your CLI: add another **`BaseAgentParticipant`** or **`BaseHumanParticipant`**, **`join`** it to the same **`AgenticEnvironment`**, and observe cross-agent traffic via **`onExternal*`** handlers.
+To extend your CLI: add another **`BaseAgent`** or **`BaseHuman`**, **`join`** it to the same **`AgenticEnvironment`**, and observe cross-agent traffic via **`onExternal*`** handlers.
 
 ---
 
